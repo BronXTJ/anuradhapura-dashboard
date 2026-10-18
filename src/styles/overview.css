@@ -345,18 +345,24 @@
 }
 
 .map-canvas {
-  display: grid;
   height: 100%;
-  place-items: center;
+  min-height: 0;
 }
 
-.map-canvas p {
+.map-canvas .maplibregl-map {
+  height: 100%;
+  width: 100%;
+}
+
+.map-canvas .maplibregl-ctrl-attrib {
+  font-size: 10px;
+  background: rgba(7, 13, 24, 0.82);
   color: var(--color-muted);
-  font-size: var(--text-sm);
 }
 
 .map-controls {
   position: absolute;
+  z-index: 2;
   top: var(--space-2);
   right: var(--space-2);
   width: 250px;
