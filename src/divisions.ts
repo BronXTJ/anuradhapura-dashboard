@@ -6,6 +6,8 @@ export type Division = {
   pcode: string
   parentName: string
   parentPcode: string
+  centerLat: number
+  centerLon: number
   geometry: { type: string; coordinates: unknown }
 }
 
@@ -30,13 +32,17 @@ function readDivision(mode: DivisionMode, feature: BoundaryFeature): Division | 
   const properties = feature.properties ?? {}
   const name = String(properties.name ?? '')
   const pcode = String(properties.pcode ?? '')
-  if (!name || !pcode || !feature.geometry) return null
+  const centerLat = Number(properties.center_lat)
+  const centerLon = Number(properties.center_lon)
+  if (!name || !pcode || !feature.geometry || !Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return null
   return {
     mode,
     name,
     pcode,
     parentName: String(properties.parent_name ?? ''),
     parentPcode: String(properties.parent_pcode ?? ''),
+    centerLat,
+    centerLon,
     geometry: feature.geometry,
   }
 }

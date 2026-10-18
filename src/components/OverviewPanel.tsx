@@ -52,7 +52,7 @@ export function OverviewPanel({
         <DivisionSearch key={mode} mode={mode} query={query} onQueryChange={onQueryChange} onSelect={onSelect} />
       </div>
       <StatGrid mode={mode} selectedPcode={selected?.pcode ?? null} />
-      <ConditionsPanel />
+      <ConditionsPanel selected={selected} />
     </section>
   )
 }
