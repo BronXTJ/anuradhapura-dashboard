@@ -1,22 +1,29 @@
-import { useState } from 'react'
+import { divisionLabel, type Division, type DivisionMode } from '../divisions.ts'
 import { ConditionsPanel } from './ConditionsPanel.tsx'
 import { DivisionSearch } from './DivisionSearch.tsx'
 import { StatGrid } from './StatGrid.tsx'
-import type { DivisionMode, SampleDivision } from '../sampleDivisions.ts'
 
-export function OverviewPanel() {
-  const [mode, setMode] = useState<DivisionMode>('ds')
-  const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<SampleDivision | null>(null)
+type OverviewPanelProps = {
+  mode: DivisionMode
+  query: string
+  selected: Division | null
+  onModeChange: (mode: DivisionMode) => void
+  onQueryChange: (value: string) => void
+  onSelect: (division: Division) => void
+  onBack: () => void
+}
 
-  function changeMode(next: DivisionMode) {
-    setMode(next)
-    setQuery('')
-    setSelected(null)
-  }
-
+export function OverviewPanel({
+  mode,
+  query,
+  selected,
+  onModeChange,
+  onQueryChange,
+  onSelect,
+  onBack,
+}: OverviewPanelProps) {
   const subtitle = selected
-    ? `Showing sample ${mode === 'ds' ? 'DS' : 'GN'} division data for ${selected.label}`
+    ? `Showing ${mode === 'ds' ? 'DS' : 'GN'} division data for ${divisionLabel(selected)}`
     : 'District overview'
 
   return (
@@ -24,27 +31,25 @@ export function OverviewPanel() {
       <header className="overview-head">
         <p className="eyebrow">Primary study area</p>
         <h1>Anuradhapura District</h1>
-        <p className="subtitle">{subtitle}</p>
+        <div className="subtitle-row">
+          <p className="subtitle">{subtitle}</p>
+          {selected ? (
+            <button type="button" className="back-button" onClick={onBack}>
+              Back to district
+            </button>
+          ) : null}
+        </div>
       </header>
       <div className="view-row">
         <div className="mode-switch" role="group" aria-label="View by">
-          <button type="button" aria-pressed={mode === 'ds'} onClick={() => changeMode('ds')}>
+          <button type="button" aria-pressed={mode === 'ds'} onClick={() => onModeChange('ds')}>
             DS divisions
           </button>
-          <button type="button" aria-pressed={mode === 'gn'} onClick={() => changeMode('gn')}>
+          <button type="button" aria-pressed={mode === 'gn'} onClick={() => onModeChange('gn')}>
             GN divisions
           </button>
         </div>
-        <DivisionSearch
-          key={mode}
-          mode={mode}
-          query={query}
-          onQueryChange={(value) => {
-            setQuery(value)
-            setSelected((current) => (current?.label === value ? current : null))
-          }}
-          onSelect={setSelected}
-        />
+        <DivisionSearch key={mode} mode={mode} query={query} onQueryChange={onQueryChange} onSelect={onSelect} />
       </div>
       <StatGrid />
       <ConditionsPanel />

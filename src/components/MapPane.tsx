@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { LngLatBounds, Map, NavigationControl } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { loadDivisions, type BoundaryCollection, type DivisionMode } from '../divisions.ts'
 
 const layers = [
   { id: 'district', label: 'Anuradhapura district boundary', color: '#f87171', defaultOn: true },
@@ -27,10 +28,6 @@ function extendBounds(bounds: LngLatBounds, coordinates: unknown): void {
   for (const child of coordinates) extendBounds(bounds, child)
 }
 
-type BoundaryCollection = {
-  features: Array<{ geometry: { coordinates: unknown } | null }>
-}
-
 async function fetchBoundary(url: string): Promise<BoundaryCollection> {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`${url} failed (${response.status})`)
@@ -45,8 +42,13 @@ function addBoundaryLine(
   color: string,
   visible: boolean,
   width: number,
+  promoteId?: string,
 ) {
-  map.addSource(sourceId, { type: 'geojson', data })
+  map.addSource(sourceId, {
+    type: 'geojson',
+    data,
+    ...(promoteId ? { promoteId } : {}),
+  })
   map.addLayer({
     id: layerId,
     type: 'line',
@@ -54,18 +56,28 @@ function addBoundaryLine(
     layout: { visibility: visible ? 'visible' : 'none' },
     paint: {
       'line-color': color,
-      'line-width': width,
+      'line-width': promoteId
+        ? ['case', ['boolean', ['feature-state', 'selected'], false], 4, width]
+        : width,
     },
   })
 }
 
-export function MapPane() {
+type MapPaneProps = {
+  mode: DivisionMode
+  selectedPcode: string | null
+}
+
+export function MapPane({ mode, selectedPcode }: MapPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const basemapRef = useRef<BasemapId>('streets')
   const districtOnRef = useRef(true)
   const dsOnRef = useRef(true)
   const gnOnRef = useRef(false)
+  const seenModeRef = useRef(mode)
+  const districtBoundsRef = useRef<LngLatBounds | null>(null)
+  const highlightedRef = useRef<{ mode: DivisionMode; pcode: string } | null>(null)
   const [basemap, setBasemap] = useState<BasemapId>('streets')
   const [mapReady, setMapReady] = useState(false)
   const [enabled, setEnabled] = useState<Record<LayerId, boolean>>(() =>
@@ -142,42 +154,35 @@ export function MapPane() {
         layout: { visibility: basemapRef.current === 'satellite' ? 'visible' : 'none' },
       })
 
-      void Promise.allSettled([
-        fetchBoundary('/data/gn.geojson'),
-        fetchBoundary('/data/ds.geojson'),
-        fetchBoundary('/data/district.geojson'),
-      ]).then((results) => {
+      void Promise.allSettled([loadDivisions(), fetchBoundary('/data/district.geojson')]).then((results) => {
         if (cancelled || !mapRef.current) return
-        const [gnData, dsData, districtData] = results
-        if (gnData.status === 'fulfilled') {
-          addBoundaryLine(map, 'gn', 'gn-boundary', gnData.value, '#fb923c', gnOnRef.current, 1)
+        const [catalogResult, districtResult] = results
+        if (catalogResult.status === 'fulfilled') {
+          addBoundaryLine(map, 'gn', 'gn-boundary', catalogResult.value.gnCollection, '#fb923c', gnOnRef.current, 1, 'pcode')
+          addBoundaryLine(map, 'ds', 'ds-boundary', catalogResult.value.dsCollection, '#c084fc', dsOnRef.current, 1.5, 'pcode')
         } else {
-          console.error(gnData.reason)
+          console.error(catalogResult.reason)
         }
-        if (dsData.status === 'fulfilled') {
-          addBoundaryLine(map, 'ds', 'ds-boundary', dsData.value, '#c084fc', dsOnRef.current, 1.5)
-        } else {
-          console.error(dsData.reason)
-        }
-        if (districtData.status === 'fulfilled') {
+        if (districtResult.status === 'fulfilled') {
           addBoundaryLine(
             map,
             'district',
             'district-boundary',
-            districtData.value,
+            districtResult.value,
             '#f87171',
             districtOnRef.current,
             2,
           )
           const bounds = new LngLatBounds()
-          for (const feature of districtData.value.features) {
+          for (const feature of districtResult.value.features) {
             if (feature.geometry) extendBounds(bounds, feature.geometry.coordinates)
           }
+          districtBoundsRef.current = bounds
           if (!bounds.isEmpty()) {
             map.fitBounds(bounds, { padding: 32, duration: 0 })
           }
         } else {
-          console.error(districtData.reason)
+          console.error(districtResult.reason)
         }
         map.resize()
         setMapReady(true)
@@ -216,6 +221,45 @@ export function MapPane() {
     if (!mapReady || !map?.getLayer('gn-boundary')) return
     map.setLayoutProperty('gn-boundary', 'visibility', enabled.gn ? 'visible' : 'none')
   }, [enabled.gn, mapReady])
+
+  useEffect(() => {
+    if (seenModeRef.current === mode) return
+    seenModeRef.current = mode
+    setEnabled((current) => ({ ...current, [mode]: true }))
+  }, [mode])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    let cancelled = false
+    void loadDivisions().then((catalog) => {
+      if (cancelled || mapRef.current !== map) return
+      const previous = highlightedRef.current
+      if (previous && map.getSource(previous.mode)) {
+        map.removeFeatureState({ source: previous.mode, id: previous.pcode })
+      }
+      if (!selectedPcode) {
+        highlightedRef.current = null
+        if (previous && districtBoundsRef.current && !districtBoundsRef.current.isEmpty()) {
+          map.fitBounds(districtBoundsRef.current, { padding: 32, duration: 0 })
+        }
+        return
+      }
+      const division = catalog[mode].find((item) => item.pcode === selectedPcode)
+      if (!division || !map.getSource(mode)) return
+      setEnabled((current) => (current[mode] ? current : { ...current, [mode]: true }))
+      map.setFeatureState({ source: mode, id: division.pcode }, { selected: true })
+      highlightedRef.current = { mode, pcode: division.pcode }
+      const bounds = new LngLatBounds()
+      extendBounds(bounds, division.geometry.coordinates)
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 32, duration: 0, maxZoom: 14 })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mapReady, mode, selectedPcode])
 
   return (
     <section className="map-pane" aria-label="Map">

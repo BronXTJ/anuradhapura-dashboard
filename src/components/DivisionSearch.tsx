@@ -1,29 +1,51 @@
-import { useId, useMemo, useState } from 'react'
-import { sampleDivisions, type DivisionMode, type SampleDivision } from '../sampleDivisions.ts'
+import { useEffect, useId, useMemo, useState } from 'react'
+import { divisionLabel, loadDivisions, type Division, type DivisionMode } from '../divisions.ts'
 
 type DivisionSearchProps = {
   mode: DivisionMode
   query: string
   onQueryChange: (value: string) => void
-  onSelect: (division: SampleDivision) => void
+  onSelect: (division: Division) => void
 }
 
 export function DivisionSearch({ mode, query, onQueryChange, onSelect }: DivisionSearchProps) {
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [divisions, setDivisions] = useState<Division[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadDivisions()
+      .then((catalog) => {
+        if (!cancelled) setDivisions(catalog[mode])
+      })
+      .catch((error: unknown) => {
+        console.error(error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mode])
+
   const options = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return sampleDivisions[mode].filter((division) =>
-      division.label.toLowerCase().includes(needle),
-    )
-  }, [mode, query])
+    if (!needle) return divisions
+    return divisions.filter((division) => {
+      const label = divisionLabel(division).toLowerCase()
+      return (
+        division.name.toLowerCase().includes(needle) ||
+        division.parentName.toLowerCase().includes(needle) ||
+        division.pcode.toLowerCase().includes(needle) ||
+        label.includes(needle)
+      )
+    })
+  }, [divisions, query])
 
   const active = options[Math.min(activeIndex, Math.max(options.length - 1, 0))]
 
-  function choose(division: SampleDivision) {
+  function choose(division: Division) {
     onSelect(division)
-    onQueryChange(division.label)
     setOpen(false)
   }
 
@@ -44,7 +66,7 @@ export function DivisionSearch({ mode, query, onQueryChange, onSelect }: Divisio
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          aria-activedescendant={open && active ? `${listId}-${active.id}` : undefined}
+          aria-activedescendant={open && active ? `${listId}-${active.pcode}` : undefined}
           placeholder={mode === 'ds' ? 'Search a DS division' : 'Search a GN division'}
           value={query}
           onChange={(event) => {
@@ -88,16 +110,15 @@ export function DivisionSearch({ mode, query, onQueryChange, onSelect }: Divisio
       </div>
       {open ? (
         <div className="search-panel">
-          <p className="search-note">Sample names</p>
-          <ul id={listId} className="search-list" role="listbox" aria-label="Sample division names">
+          <ul id={listId} className="search-list" role="listbox" aria-label="Division names">
             {options.length === 0 ? (
-              <li className="search-empty">No sample matches</li>
+              <li className="search-empty">{divisions.length === 0 ? 'Loading divisions' : 'No matches'}</li>
             ) : (
               options.map((division, index) => (
-                <li key={division.id}>
+                <li key={division.pcode}>
                   <button
                     type="button"
-                    id={`${listId}-${division.id}`}
+                    id={`${listId}-${division.pcode}`}
                     role="option"
                     aria-selected={index === activeIndex}
                     className={index === activeIndex ? 'search-option is-active' : 'search-option'}
@@ -105,7 +126,8 @@ export function DivisionSearch({ mode, query, onQueryChange, onSelect }: Divisio
                     onMouseEnter={() => setActiveIndex(index)}
                     onClick={() => choose(division)}
                   >
-                    {division.label}
+                    <span className="search-option-label">{divisionLabel(division)}</span>
+                    <span className="search-option-code">{division.pcode}</span>
                   </button>
                 </li>
               ))
