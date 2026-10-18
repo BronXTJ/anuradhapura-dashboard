@@ -27,11 +27,45 @@ function extendBounds(bounds: LngLatBounds, coordinates: unknown): void {
   for (const child of coordinates) extendBounds(bounds, child)
 }
 
+type BoundaryCollection = {
+  features: Array<{ geometry: { coordinates: unknown } | null }>
+}
+
+async function fetchBoundary(url: string): Promise<BoundaryCollection> {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`${url} failed (${response.status})`)
+  return response.json() as Promise<BoundaryCollection>
+}
+
+function addBoundaryLine(
+  map: Map,
+  sourceId: string,
+  layerId: string,
+  data: BoundaryCollection,
+  color: string,
+  visible: boolean,
+  width: number,
+) {
+  map.addSource(sourceId, { type: 'geojson', data })
+  map.addLayer({
+    id: layerId,
+    type: 'line',
+    source: sourceId,
+    layout: { visibility: visible ? 'visible' : 'none' },
+    paint: {
+      'line-color': color,
+      'line-width': width,
+    },
+  })
+}
+
 export function MapPane() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const basemapRef = useRef<BasemapId>('streets')
   const districtOnRef = useRef(true)
+  const dsOnRef = useRef(true)
+  const gnOnRef = useRef(false)
   const [basemap, setBasemap] = useState<BasemapId>('streets')
   const [mapReady, setMapReady] = useState(false)
   const [enabled, setEnabled] = useState<Record<LayerId, boolean>>(() =>
@@ -45,6 +79,14 @@ export function MapPane() {
   useEffect(() => {
     districtOnRef.current = enabled.district
   }, [enabled.district])
+
+  useEffect(() => {
+    dsOnRef.current = enabled.ds
+  }, [enabled.ds])
+
+  useEffect(() => {
+    gnOnRef.current = enabled.gn
+  }, [enabled.gn])
 
   useEffect(() => {
     const container = containerRef.current
@@ -100,38 +142,46 @@ export function MapPane() {
         layout: { visibility: basemapRef.current === 'satellite' ? 'visible' : 'none' },
       })
 
-      void fetch('/data/district.geojson')
-        .then((response) => {
-          if (!response.ok) throw new Error(`District boundary request failed (${response.status})`)
-          return response.json()
-        })
-        .then((data: { features: Array<{ geometry: { coordinates: unknown } | null }> }) => {
-          if (cancelled || !mapRef.current) return
-          map.addSource('district', { type: 'geojson', data })
-          map.addLayer({
-            id: 'district-boundary',
-            type: 'line',
-            source: 'district',
-            layout: { visibility: districtOnRef.current ? 'visible' : 'none' },
-            paint: {
-              'line-color': '#f87171',
-              'line-width': 2,
-            },
-          })
+      void Promise.allSettled([
+        fetchBoundary('/data/gn.geojson'),
+        fetchBoundary('/data/ds.geojson'),
+        fetchBoundary('/data/district.geojson'),
+      ]).then((results) => {
+        if (cancelled || !mapRef.current) return
+        const [gnData, dsData, districtData] = results
+        if (gnData.status === 'fulfilled') {
+          addBoundaryLine(map, 'gn', 'gn-boundary', gnData.value, '#fb923c', gnOnRef.current, 1)
+        } else {
+          console.error(gnData.reason)
+        }
+        if (dsData.status === 'fulfilled') {
+          addBoundaryLine(map, 'ds', 'ds-boundary', dsData.value, '#c084fc', dsOnRef.current, 1.5)
+        } else {
+          console.error(dsData.reason)
+        }
+        if (districtData.status === 'fulfilled') {
+          addBoundaryLine(
+            map,
+            'district',
+            'district-boundary',
+            districtData.value,
+            '#f87171',
+            districtOnRef.current,
+            2,
+          )
           const bounds = new LngLatBounds()
-          for (const feature of data.features) {
+          for (const feature of districtData.value.features) {
             if (feature.geometry) extendBounds(bounds, feature.geometry.coordinates)
           }
           if (!bounds.isEmpty()) {
             map.fitBounds(bounds, { padding: 32, duration: 0 })
           }
-          map.resize()
-          setMapReady(true)
-        })
-        .catch((error: unknown) => {
-          console.error(error)
-          if (!cancelled) setMapReady(true)
-        })
+        } else {
+          console.error(districtData.reason)
+        }
+        map.resize()
+        setMapReady(true)
+      })
     })
 
     return () => {
@@ -154,6 +204,18 @@ export function MapPane() {
     if (!mapReady || !map?.getLayer('district-boundary')) return
     map.setLayoutProperty('district-boundary', 'visibility', enabled.district ? 'visible' : 'none')
   }, [enabled.district, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.getLayer('ds-boundary')) return
+    map.setLayoutProperty('ds-boundary', 'visibility', enabled.ds ? 'visible' : 'none')
+  }, [enabled.ds, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map?.getLayer('gn-boundary')) return
+    map.setLayoutProperty('gn-boundary', 'visibility', enabled.gn ? 'visible' : 'none')
+  }, [enabled.gn, mapReady])
 
   return (
     <section className="map-pane" aria-label="Map">
