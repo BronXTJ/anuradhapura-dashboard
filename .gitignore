@@ -35,6 +35,9 @@ __pycache__/
 .venv/
 venv/
 
+# Rebuilt locally by scripts/prepare_overview_data.py
+public/data/buildings/
+
 # Test and coverage
 coverage/
 .nyc_output/
