@@ -7,7 +7,10 @@
   --color-muted: #8aa0b8;
   --color-line: rgba(125, 211, 252, 0.18);
   --color-accent: #38bdf8;
+  --color-warm: #f77f00;
   --color-focus: #7dd3fc;
+  --chart-temp: #38bdf8;
+  --chart-feels: #fbbf24;
 
   --font-sans: "Segoe UI", system-ui, sans-serif;
   --text-sm: 0.875rem;
