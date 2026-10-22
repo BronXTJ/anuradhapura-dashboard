@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { LngLatBounds, Map, NavigationControl } from 'maplibre-gl'
+import { LngLatBounds, Map, NavigationControl, type MapMouseEvent } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { loadDivisions, type BoundaryCollection, type Division, type DivisionMode } from '../divisions.ts'
 
@@ -179,7 +179,7 @@ export function MapPane({ mode, selectedPcode, selectedName, onProbe, onSelect }
     map.addControl(new NavigationControl({ showCompass: false }), 'top-left')
     mapRef.current = map
 
-    const onClick = (event: { point: [number, number] | { x: number; y: number }; lngLat?: { lat: number; lng: number } }) => {
+    const onClick = (event: MapMouseEvent) => {
       setCoords(null)
       if (event.lngLat) onProbeRef.current(event.lngLat.lat, event.lngLat.lng)
       const layerIds = ['gn-fill', 'ds-fill'].filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none')
